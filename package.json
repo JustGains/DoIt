@@ -1,0 +1,19 @@
+{
+  "name": "doit",
+  "version": "0.1.0",
+  "description": "Interactive package.json script runner for Bun workspaces",
+  "type": "module",
+  "bin": {
+    "doit": "./src/index.ts"
+  },
+  "scripts": {
+    "start": "bun run ./src/index.ts --help"
+  },
+  "keywords": [
+    "bun",
+    "cli",
+    "scripts",
+    "package-json"
+  ],
+  "license": "MIT"
+}
