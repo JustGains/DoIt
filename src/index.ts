@@ -28,6 +28,8 @@ type PackageInfo = {
   displayName: string;
   relativeDir: string;
   description?: string;
+  hasItScript: boolean;
+  packageJsonPath: string;
   scripts: string[];
   scriptMetadata: Record<string, ScriptMetadata>;
   tree: MenuNode;
@@ -202,7 +204,10 @@ async function loadPackage(packagePath: string, root: string): Promise<PackageIn
   try {
     const raw = await readFile(packagePath, "utf8");
     const parsed = JSON.parse(raw) as PackageJson;
-    const scripts = Object.keys(parsed.scripts ?? {}).sort((left, right) => left.localeCompare(right));
+    const hasItScript = typeof parsed.scripts?.it === "string";
+    const scripts = Object.keys(parsed.scripts ?? {})
+      .filter((script) => script !== "it")
+      .sort((left, right) => left.localeCompare(right));
 
     if (scripts.length === 0) {
       return null;
@@ -218,6 +223,8 @@ async function loadPackage(packagePath: string, root: string): Promise<PackageIn
       displayName,
       relativeDir,
       description: metadata.description,
+      hasItScript,
+      packageJsonPath: packagePath,
       scripts,
       scriptMetadata: metadata.scripts ?? {},
       tree: buildTree(scripts),
@@ -341,7 +348,7 @@ function formatOptionLabel(label: string, description?: string): string {
 
 type MenuOption = {
   label: string;
-  action: "open-package" | "run" | "navigate";
+  action: "add-it" | "open-package" | "run" | "navigate";
   description?: string;
   node?: MenuNode;
   pkg?: PackageInfo;
@@ -376,9 +383,17 @@ function buildNodeOptions(pkg: PackageInfo, current: MenuNode): MenuOption[] {
     });
   }
 
+  if (current === pkg.tree && !pkg.hasItScript) {
+    options.push({
+      label: 'Add "it" to scripts',
+      action: "add-it",
+      description: 'Adds "it": "bunx @justgains/doit" so you can run bun run it or npm run it.',
+    });
+  }
+
   return options.sort((left, right) => {
-    const leftRank = left.action === "run" ? 0 : left.action === "navigate" ? 1 : 2;
-    const rightRank = right.action === "run" ? 0 : right.action === "navigate" ? 1 : 2;
+    const leftRank = left.action === "run" ? 0 : left.action === "navigate" ? 1 : left.action === "add-it" ? 2 : 3;
+    const rightRank = right.action === "run" ? 0 : right.action === "navigate" ? 1 : right.action === "add-it" ? 2 : 3;
 
     if (leftRank !== rightRank) {
       return leftRank - rightRank;
@@ -419,6 +434,10 @@ function getOptionTint(option: MenuOption): string {
 
   if (option.action === "navigate") {
     return ANSI.cyan;
+  }
+
+  if (option.action === "add-it") {
+    return ANSI.yellow;
   }
 
   return ANSI.magenta;
@@ -643,6 +662,59 @@ async function initializeDoitFiles(packages: PackageInfo[]): Promise<string[]> {
   return writtenFiles;
 }
 
+function detectIndent(raw: string): string {
+  const match = raw.match(/^[ \t]+(?="[^"]+":)/m);
+  return match?.[0] ?? "  ";
+}
+
+function detectNewline(raw: string): string {
+  return raw.includes("\r\n") ? "\r\n" : "\n";
+}
+
+async function addItScriptToPackage(pkg: PackageInfo): Promise<void> {
+  const raw = await readFile(pkg.packageJsonPath, "utf8");
+  const parsed = JSON.parse(raw) as Record<string, unknown>;
+
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error(`Invalid package.json in ${pkg.packageJsonPath}`);
+  }
+
+  const scriptsValue = parsed.scripts;
+  if (scriptsValue !== undefined && (typeof scriptsValue !== "object" || scriptsValue === null || Array.isArray(scriptsValue))) {
+    throw new Error(`Invalid scripts section in ${pkg.packageJsonPath}`);
+  }
+
+  const scripts = { ...(scriptsValue as Record<string, unknown> | undefined) };
+  if (typeof scripts.it !== "string") {
+    scripts.it = "bunx @justgains/doit";
+  }
+
+  parsed.scripts = scripts;
+
+  const indent = detectIndent(raw);
+  const newline = detectNewline(raw);
+  const nextRaw = `${JSON.stringify(parsed, null, indent).replace(/\n/g, newline)}${newline}`;
+
+  await writeFile(pkg.packageJsonPath, nextRaw, "utf8");
+  pkg.hasItScript = true;
+}
+
+async function pauseForMenu(message: string) {
+  console.log("");
+  console.log(paint(message, ANSI.yellow));
+
+  if (!input.isTTY) {
+    return;
+  }
+
+  console.log("");
+  console.log(paint("Press Enter to return to the menu.", ANSI.gray));
+
+  await new Promise<void>((resolve) => {
+    input.once("data", () => resolve());
+  });
+}
+
 async function runScript(pkg: PackageInfo, scriptName: string): Promise<void> {
   console.log(`\nRunning bun run ${scriptName} in ${pkg.dir}\n`);
 
@@ -723,6 +795,17 @@ async function browsePackageNode(
       continue;
     }
 
+    if (option.action === "add-it") {
+      clearScreen();
+      try {
+        await addItScriptToPackage(pkg);
+        await pauseForMenu(`Added "it" to ${pkg.packageJsonPath}`);
+      } catch (error) {
+        await pauseForMenu(error instanceof Error ? error.message : String(error));
+      }
+      continue;
+    }
+
     if (option.node) {
       stack.push(option.node);
       breadcrumbs.push(option.node.label);
@@ -779,6 +862,17 @@ async function runMenu(packages: PackageInfo[]) {
       if (selected.action === "run" && selected.scriptName && rootPackage) {
         clearScreen();
         await runScript(rootPackage, selected.scriptName);
+        continue;
+      }
+
+      if (selected.action === "add-it" && rootPackage) {
+        clearScreen();
+        try {
+          await addItScriptToPackage(rootPackage);
+          await pauseForMenu(`Added "it" to ${rootPackage.packageJsonPath}`);
+        } catch (error) {
+          await pauseForMenu(error instanceof Error ? error.message : String(error));
+        }
         continue;
       }
 

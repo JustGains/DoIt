@@ -17,7 +17,7 @@ It gives you:
 ## Install
 
 ```bash
-bunx doit
+bunx @justgains/doit
 ```
 
 For local development:
@@ -33,25 +33,25 @@ bun run ./src/index.ts --help
 Run in the repo you want to inspect:
 
 ```bash
-bunx doit
+bunx @justgains/doit
 ```
 
 Point it at a specific folder:
 
 ```bash
-bunx doit --root ./apps
+bunx @justgains/doit --root ./apps
 ```
 
 Scan deeper than the default 3 directories:
 
 ```bash
-bunx doit --depth 5
+bunx @justgains/doit --depth 5
 ```
 
 Initialize `package.doit.json` files:
 
 ```bash
-bunx doit --init
+bunx @justgains/doit --init
 ```
 
 ## How It Works
@@ -100,7 +100,7 @@ Example:
 }
 ```
 
-Running `bunx doit --init` creates or refreshes these files and prints a short prompt you can give to an agent to fill in the descriptions.
+Running `bunx @justgains/doit --init` creates or refreshes these files and prints a short prompt you can give to an agent to fill in the descriptions.
 
 ## License
 

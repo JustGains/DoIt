@@ -1,0 +1,6 @@
+{
+  "name": "fixture-pkg",
+  "scripts": {
+    "build": "echo build"
+  }
+}
